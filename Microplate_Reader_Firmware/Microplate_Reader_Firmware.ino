@@ -1,0 +1,262 @@
+#include <SPI.h>
+#include <TMCStepper.h>
+#include <cppQueue.h>
+
+#define CS_PIN 53 // Chip select
+// #define SW_MOSI 51  // Software Master Out Slave In (MOSI)
+// #define SW_MISO 50  // Software Master In Slave Out (MISO)
+// #define SW_SCK 52   // Software Slave Clock (SCK)
+
+#define CHANNEL_1_ADC_PIN 54
+#define CHANNEL_2_ADC_PIN 55
+#define CHANNEL_3_ADC_PIN 56
+#define CHANNEL_4_ADC_PIN 57
+#define CHANNEL_5_ADC_PIN 58
+#define CHANNEL_6_ADC_PIN 59
+#define CHANNEL_7_ADC_PIN 60
+#define CHANNEL_8_ADC_PIN 61
+
+#define CHANNEL_1_PWM_PIN 13
+#define CHANNEL_2_PWM_PIN 12
+#define CHANNEL_3_PWM_PIN 11
+#define CHANNEL_4_PWM_PIN 10
+#define CHANNEL_5_PWM_PIN 9
+#define CHANNEL_6_PWM_PIN 8
+#define CHANNEL_7_PWM_PIN 7
+#define CHANNEL_8_PWM_PIN 6
+
+const uint8_t ADC_PINS[8] = {
+    CHANNEL_1_ADC_PIN, CHANNEL_2_ADC_PIN, CHANNEL_3_ADC_PIN, CHANNEL_4_ADC_PIN,
+    CHANNEL_5_ADC_PIN, CHANNEL_6_ADC_PIN, CHANNEL_7_ADC_PIN, CHANNEL_8_ADC_PIN};
+const uint8_t PWM_PINS[8] = {
+    CHANNEL_1_PWM_PIN, CHANNEL_2_PWM_PIN, CHANNEL_3_PWM_PIN, CHANNEL_4_PWM_PIN,
+    CHANNEL_5_PWM_PIN, CHANNEL_6_PWM_PIN, CHANNEL_7_PWM_PIN, CHANNEL_8_PWM_PIN};
+
+// Command Word Definitions
+enum CommandWord {
+  COMMAND_HOME,
+  COMMAND_MOVE_ABS,
+  COMMAND_SET_ROW_POS,
+  COMMAND_SET_LED_PWR,
+  COMMAND_SCAN_WELL,
+  COMMAND_SCAN_ALL,
+};
+
+typedef struct {
+  int32_t row_positions[12];
+  uint8_t led_powers[8];
+  int32_t position;
+  CommandWord command_word;
+  uint8_t row;
+  uint8_t col;
+} Command;
+
+bool string_to_command(String s, Command *c) {
+  while (!s.startsWith("/") && s.length() != 0) {
+    s.remove(0);
+  };
+  if (s.length() == 0) {
+    return false;
+  }
+
+  auto index = s.indexOf(' ');
+  auto command_word =
+      (index == -1) ? s.substring(0, s.length() - 1) : s.substring(0, index);
+  if (command_word == "/echo") {
+    Serial.print('@');
+    Serial.print(s.substring(1));
+  } else if (command_word == "/home") {
+    c->command_word = COMMAND_HOME;
+  } else if (command_word == "/move_abs") {
+    c->command_word = COMMAND_MOVE_ABS;
+    c->position = s.substring(index + 1).toInt();
+  } else if (command_word == "/set_row_pos") {
+    c->command_word = COMMAND_SET_ROW_POS;
+    sscanf(s.c_str() + index, "%li %li %li %li %li %li %li %li %li %li %li %li",
+           &(c->row_positions[0]), &(c->row_positions[1]),
+           &(c->row_positions[2]), &(c->row_positions[3]),
+           &(c->row_positions[4]), &(c->row_positions[5]),
+           &(c->row_positions[6]), &(c->row_positions[7]),
+           &(c->row_positions[8]), &(c->row_positions[9]),
+           &(c->row_positions[10]), &(c->row_positions[11]));
+  } else if (command_word == "/set_led_pwr") {
+    c->command_word = COMMAND_SET_LED_PWR;
+    sscanf(s.c_str() + index, "%li %li %li %li %li %li %li %li",
+           &(c->led_powers[0]), &(c->led_powers[1]), &(c->led_powers[2]),
+           &(c->led_powers[3]), &(c->led_powers[4]), &(c->led_powers[5]),
+           &(c->led_powers[6]), &(c->led_powers[7]));
+  } else if (command_word == "/scan_well") {
+    c->command_word = COMMAND_SCAN_WELL;
+    sscanf(s.c_str() + index, "%d %d", &(c->row), &(c->col));
+  } else if (command_word == "/scan_all") {
+    c->command_word = COMMAND_SCAN_ALL;
+  } else {
+    return false;
+  }
+  return true;
+}
+cppQueue command_queue(sizeof(Command), 16, FIFO);
+
+// Stepper Motor Driver
+TMC5130Stepper driver(CS_PIN);
+
+void setup() {
+  // initialize serial:
+  Serial.begin(9600);
+
+  // initialize SPI CS Pin
+  pinMode(CS_PIN, OUTPUT);
+
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE3));
+  SPI.begin();
+
+  driver.begin(); //  SPI: Init CS pins and possible SW SPI pins
+
+  driver.CHOPCONF(0x000100C3);
+  driver.IHOLD_IRUN(0x00061F0A);
+  driver.TPOWERDOWN(0x0000000A);
+  driver.GCONF(0x00000004);
+  driver.TPWMTHRS(0x000001F4);
+  driver.PWMCONF(0x000401C8);
+
+  driver.a1(1000);
+  driver.v1(50000);
+  driver.AMAX(500);
+  driver.VMAX(200000);
+  driver.DMAX(700);
+  driver.d1(1400);
+  driver.VSTOP(10);
+  driver.RAMPMODE(0);
+
+  driver.en_softstop(false); // Hard Stop
+
+  driver.stop_r_enable(true);
+  driver.pol_stop_r(false); // Active High
+
+  driver.stop_l_enable(true);
+  driver.pol_stop_l(false);
+
+  // initialize ADC pins
+  for (auto i = 0; i < 8; ++i) {
+    pinMode(ADC_PINS[i], INPUT);
+  }
+}
+
+void loop() {
+  static int32_t row_positions[12] = {10, 20, 30, 40,  50,  60,
+                                      70, 80, 90, 100, 110, 120};
+  static uint8_t led_powers[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+
+  while (!command_queue.isEmpty()) {
+    Command c;
+    command_queue.pop(&c);
+    switch (c.command_word) {
+    case COMMAND_HOME: {
+      driver.RAMPMODE(1); // Set to Positive Velocity
+      while (!driver.event_stop_r())
+        ;
+      driver.XACTUAL(0);
+      driver.XTARGET(0);
+      driver.RAMPMODE(0); // Set to Position Mode
+      Serial.println("@home");
+      break;
+    }
+    case COMMAND_MOVE_ABS: {
+      driver.XTARGET(c.position);
+      while (1) {
+        if (driver.position_reached()) {
+          break;
+        }
+        if (driver.event_stop_l() || driver.event_stop_r()) {
+          driver.XACTUAL(0);
+          driver.XTARGET(0);
+          break;
+        }
+      }
+      Serial.println(String("@move_abs " + String(c.position)));
+      break;
+    }
+    case COMMAND_SET_ROW_POS: {
+      Serial.print("@set_row_pos");
+      for (int i = 0; i < 12; ++i) {
+        row_positions[i] = c.row_positions[i];
+        Serial.print(' ');
+        Serial.print(row_positions[i]);
+      }
+      Serial.println("");
+      break;
+    }
+    case COMMAND_SET_LED_PWR: {
+      Serial.print("@set_led_pwr");
+      for (int i = 0; i < 8; ++i) {
+        led_powers[i] = c.led_powers[i];
+        Serial.print(' ');
+        Serial.print(led_powers[i]);
+      }
+      Serial.println("");
+      break;
+    }
+    case COMMAND_SCAN_WELL: {
+      // TODO: Test this
+      const auto row = c.row;
+      const auto col = c.col;
+
+      auto x_position = row_positions[row];
+      auto led_intensity = led_powers[col];
+
+      driver.XTARGET(x_position);
+      while (1) {
+        if (driver.position_reached()) {
+          break;
+        }
+        if (driver.event_stop_l() || driver.event_stop_r()) {
+          driver.XACTUAL(0);
+          driver.XTARGET(0);
+          break;
+        }
+      }
+
+      analogWrite(PWM_PINS[col], led_intensity);
+      delay(200);
+      auto result = analogRead(ADC_PINS[col]);
+      analogWrite(PWM_PINS[col], 0);
+
+      Serial.print("@scan_well ");
+      Serial.print(row);
+      Serial.print(" ");
+      Serial.print(col);
+      Serial.print(" ");
+      Serial.println(result);
+      break;
+    }
+    case COMMAND_SCAN_ALL:
+      // TODO: actual implementation
+      break;
+    default:
+      break;
+    }
+  }
+}
+
+/*
+  SerialEvent occurs whenever a new data comes in the hardware serial RX. This
+  routine is run between each time loop() runs, so using delay inside loop can
+  delay response. Multiple bytes of data may be available.
+*/
+void serialEvent() {
+  static String inputString;
+  while (Serial.available()) {
+    char inChar = (char)Serial.read();
+    inputString += inChar;
+    if (inChar == '\n') {
+      // stringComplete = true;
+      Command c;
+      if (string_to_command(inputString, &c)) {
+        command_queue.push(&c);
+      } else {
+        Serial.println("Invalid Command");
+      }
+      inputString = "";
+    }
+  }
+}
