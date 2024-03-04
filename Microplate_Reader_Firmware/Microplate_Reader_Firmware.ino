@@ -65,6 +65,7 @@ bool string_to_command(String s, Command *c) {
   if (command_word == "/echo") {
     Serial.print('@');
     Serial.print(s.substring(1));
+    return false;
   } else if (command_word == "/home") {
     c->command_word = COMMAND_HOME;
   } else if (command_word == "/move_abs") {
@@ -95,7 +96,7 @@ bool string_to_command(String s, Command *c) {
   }
   return true;
 }
-cppQueue command_queue(sizeof(Command), 16, FIFO);
+cppQueue command_queue(sizeof(Command), 100, FIFO);
 
 // Stepper Motor Driver
 TMC5130Stepper driver(CS_PIN);
@@ -113,19 +114,29 @@ void setup() {
   driver.begin(); //  SPI: Init CS pins and possible SW SPI pins
 
   driver.CHOPCONF(0x000100C3);
-  driver.IHOLD_IRUN(0x00061F0A);
+  // driver.IHOLD_IRUN(0x00061F0A);
+  driver.ihold(1);
+  driver.irun(31);
   driver.TPOWERDOWN(0x0000000A);
   driver.GCONF(0x00000004);
   driver.TPWMTHRS(0x000001F4);
   driver.PWMCONF(0x000401C8);
 
+  // driver.a1(1000);
+  // driver.v1(50000);
+  // driver.AMAX(500);
+  // driver.VMAX(200000);
+  // driver.DMAX(700);
+  // driver.d1(1400);
+  // driver.VSTOP(10);
   driver.a1(1000);
-  driver.v1(50000);
+  driver.v1(10000);
   driver.AMAX(500);
-  driver.VMAX(200000);
+  driver.VMAX(75000);
   driver.DMAX(700);
   driver.d1(1400);
   driver.VSTOP(10);
+
   driver.RAMPMODE(0);
 
   driver.en_softstop(false); // Hard Stop
@@ -140,20 +151,27 @@ void setup() {
   for (auto i = 0; i < 8; ++i) {
     pinMode(ADC_PINS[i], INPUT);
   }
+
+  // initialize PWM pins
+  for (auto i = 0; i < 8; ++i) {
+    pinMode(PWM_PINS[i], OUTPUT);
+  }
 }
 
 void loop() {
-  static int32_t row_positions[12] = {10, 20, 30, 40,  50,  60,
-                                      70, 80, 90, 100, 110, 120};
-  static uint8_t led_powers[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+  static int32_t row_positions[12] = {
+      51200 * 1, 51200 * 2, 51200 * 3, 51200 * 4,  51200 * 5,  51200 * 6,
+      51200 * 7, 51200 * 8, 51200 * 9, 51200 * 10, 51200 * 11, 51200 * 12};
+  static uint8_t led_powers[8] = {32 * 0, 32 * 1, 32 * 2, 32 * 3,
+                                  32 * 4, 32 * 5, 32 * 6, 32 * 7};
 
   while (!command_queue.isEmpty()) {
     Command c;
     command_queue.pop(&c);
     switch (c.command_word) {
     case COMMAND_HOME: {
-      driver.RAMPMODE(1); // Set to Positive Velocity
-      while (!driver.event_stop_r())
+      driver.RAMPMODE(2); // Set to Negative Velocity
+      while (!driver.event_stop_l())
         ;
       driver.XACTUAL(0);
       driver.XTARGET(0);
@@ -197,7 +215,6 @@ void loop() {
       break;
     }
     case COMMAND_SCAN_WELL: {
-      // TODO: Test this
       const auto row = c.row;
       const auto col = c.col;
 
@@ -214,6 +231,7 @@ void loop() {
           driver.XTARGET(0);
           break;
         }
+        serialEvent();
       }
 
       analogWrite(PWM_PINS[col], led_intensity);
@@ -230,6 +248,15 @@ void loop() {
       break;
     }
     case COMMAND_SCAN_ALL:
+      for (auto row_index = 0; row_index < 12; ++row_index) {
+        for (auto col_index = 0; col_index < 8; ++col_index) {
+          Command c;
+          c.command_word = COMMAND_SCAN_WELL;
+          c.row = row_index;
+          c.col = col_index;
+          command_queue.push(&c);
+        }
+      }
       // TODO: actual implementation
       break;
     default:
@@ -254,7 +281,8 @@ void serialEvent() {
       if (string_to_command(inputString, &c)) {
         command_queue.push(&c);
       } else {
-        Serial.println("Invalid Command");
+        Serial.print("@error invalid command ");
+        Serial.println(inputString);
       }
       inputString = "";
     }

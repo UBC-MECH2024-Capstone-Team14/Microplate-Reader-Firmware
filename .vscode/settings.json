@@ -9,6 +9,7 @@
         "MSBFIRST",
         "PWMCONF",
         "RAMPMODE",
+        "Rsense",
         "softstop",
         "TPOWERDOWN",
         "TPWMTHRS",
