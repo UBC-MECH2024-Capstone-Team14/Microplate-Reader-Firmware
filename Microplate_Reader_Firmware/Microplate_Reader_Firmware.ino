@@ -16,14 +16,14 @@
 #define CHANNEL_7_ADC_PIN 60
 #define CHANNEL_8_ADC_PIN 61
 
-#define CHANNEL_1_PWM_PIN 13
-#define CHANNEL_2_PWM_PIN 12
-#define CHANNEL_3_PWM_PIN 11
-#define CHANNEL_4_PWM_PIN 10
-#define CHANNEL_5_PWM_PIN 9
-#define CHANNEL_6_PWM_PIN 8
-#define CHANNEL_7_PWM_PIN 7
-#define CHANNEL_8_PWM_PIN 6
+#define CHANNEL_1_PWM_PIN 12
+#define CHANNEL_2_PWM_PIN 11
+#define CHANNEL_3_PWM_PIN 10
+#define CHANNEL_4_PWM_PIN 9
+#define CHANNEL_5_PWM_PIN 8
+#define CHANNEL_6_PWM_PIN 7
+#define CHANNEL_7_PWM_PIN 6
+#define CHANNEL_8_PWM_PIN 5
 
 const uint8_t ADC_PINS[8] = {
     CHANNEL_1_ADC_PIN, CHANNEL_2_ADC_PIN, CHANNEL_3_ADC_PIN, CHANNEL_4_ADC_PIN,
@@ -155,6 +155,7 @@ void setup() {
   // initialize PWM pins
   for (auto i = 0; i < 8; ++i) {
     pinMode(PWM_PINS[i], OUTPUT);
+    analogWrite(PWM_PINS[i], 0);
   }
 }
 
