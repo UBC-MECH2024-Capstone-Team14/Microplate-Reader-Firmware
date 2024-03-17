@@ -1,29 +1,30 @@
 #include <SPI.h>
 #include <TMCStepper.h>
 #include <cppQueue.h>
+#include <strings.h>
 
-#define CS_PIN 53 // Chip select
-// #define SW_MOSI 51  // Software Master Out Slave In (MOSI)
-// #define SW_MISO 50  // Software Master In Slave Out (MISO)
-// #define SW_SCK 52   // Software Slave Clock (SCK)
+#define CS_PIN PB12  // Chip select
+#define SW_MOSI PB15 // Software Master Out Slave In (MOSI)
+#define SW_MISO PB14 // Software Master In Slave Out (MISO)
+#define SW_SCK PB13  // Software Slave Clock (SCK)
 
-#define CHANNEL_1_ADC_PIN 54
-#define CHANNEL_2_ADC_PIN 55
-#define CHANNEL_3_ADC_PIN 56
-#define CHANNEL_4_ADC_PIN 57
-#define CHANNEL_5_ADC_PIN 58
-#define CHANNEL_6_ADC_PIN 59
-#define CHANNEL_7_ADC_PIN 60
-#define CHANNEL_8_ADC_PIN 61
+#define CHANNEL_1_ADC_PIN PA0
+#define CHANNEL_2_ADC_PIN PA1
+#define CHANNEL_3_ADC_PIN PA2
+#define CHANNEL_4_ADC_PIN PA3
+#define CHANNEL_5_ADC_PIN PA4
+#define CHANNEL_6_ADC_PIN PA5
+#define CHANNEL_7_ADC_PIN PA6
+#define CHANNEL_8_ADC_PIN PA7
 
-#define CHANNEL_1_PWM_PIN 12
-#define CHANNEL_2_PWM_PIN 11
-#define CHANNEL_3_PWM_PIN 10
-#define CHANNEL_4_PWM_PIN 9
-#define CHANNEL_5_PWM_PIN 8
-#define CHANNEL_6_PWM_PIN 7
-#define CHANNEL_7_PWM_PIN 6
-#define CHANNEL_8_PWM_PIN 5
+#define CHANNEL_1_PWM_PIN PB9
+#define CHANNEL_2_PWM_PIN PB8
+#define CHANNEL_3_PWM_PIN PB7
+#define CHANNEL_4_PWM_PIN PB6
+#define CHANNEL_5_PWM_PIN PA10
+#define CHANNEL_6_PWM_PIN PA9
+#define CHANNEL_7_PWM_PIN PA8
+#define CHANNEL_8_PWM_PIN PB1
 
 const uint8_t ADC_PINS[8] = {
     CHANNEL_1_ADC_PIN, CHANNEL_2_ADC_PIN, CHANNEL_3_ADC_PIN, CHANNEL_4_ADC_PIN,
@@ -31,6 +32,9 @@ const uint8_t ADC_PINS[8] = {
 const uint8_t PWM_PINS[8] = {
     CHANNEL_1_PWM_PIN, CHANNEL_2_PWM_PIN, CHANNEL_3_PWM_PIN, CHANNEL_4_PWM_PIN,
     CHANNEL_5_PWM_PIN, CHANNEL_6_PWM_PIN, CHANNEL_7_PWM_PIN, CHANNEL_8_PWM_PIN};
+
+// Stepper Motor Driver
+TMC5130Stepper driver(CS_PIN, SW_MOSI, SW_MISO, SW_SCK);
 
 // Command Word Definitions
 enum CommandWord {
@@ -98,18 +102,12 @@ bool string_to_command(String s, Command *c) {
 }
 cppQueue command_queue(sizeof(Command), 100, FIFO);
 
-// Stepper Motor Driver
-TMC5130Stepper driver(CS_PIN);
-
 void setup() {
   // initialize serial:
   Serial.begin(9600);
 
   // initialize SPI CS Pin
   pinMode(CS_PIN, OUTPUT);
-
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE3));
-  SPI.begin();
 
   driver.begin(); //  SPI: Init CS pins and possible SW SPI pins
 
@@ -148,6 +146,7 @@ void setup() {
   driver.pol_stop_l(false);
 
   // initialize ADC pins
+  analogReadResolution(12);
   for (auto i = 0; i < 8; ++i) {
     pinMode(ADC_PINS[i], INPUT);
   }
@@ -236,7 +235,7 @@ void loop() {
       }
 
       analogWrite(PWM_PINS[col], led_intensity);
-      delay(200);
+      delay(100);
       auto result = analogRead(ADC_PINS[col]);
       analogWrite(PWM_PINS[col], 0);
 
@@ -258,7 +257,6 @@ void loop() {
           command_queue.push(&c);
         }
       }
-      // TODO: actual implementation
       break;
     default:
       break;
