@@ -3,6 +3,8 @@
 #include <cppQueue.h>
 #include <strings.h>
 
+#define SERIAL_RX_BUFFER_SIZE 2048
+
 #define CS_PIN PB12  // Chip select
 #define SW_MOSI PB15 // Software Master Out Slave In (MOSI)
 #define SW_MISO PB14 // Software Master In Slave Out (MISO)
@@ -65,7 +67,7 @@ bool string_to_command(String s, Command *c) {
 
   auto index = s.indexOf(' ');
   auto command_word =
-      (index == -1) ? s.substring(0, s.length() - 1) : s.substring(0, index);
+      (index == -1) ? s.substring(0, s.length()) : s.substring(0, index);
   if (command_word == "/echo") {
     Serial.print('@');
     Serial.print(s.substring(1));
@@ -100,10 +102,11 @@ bool string_to_command(String s, Command *c) {
   }
   return true;
 }
-cppQueue command_queue(sizeof(Command), 100, FIFO);
+cppQueue command_queue(sizeof(Command), 128, FIFO, true);
 
 void setup() {
   // initialize serial:
+  Serial.setTimeout(10);
   Serial.begin(9600);
 
   // initialize SPI CS Pin
@@ -220,24 +223,30 @@ void loop() {
 
       auto x_position = row_positions[row];
       auto led_intensity = led_powers[col];
+      auto pwm_pin = PWM_PINS[col];
 
       driver.XTARGET(x_position);
       while (1) {
+        serialEvent();
         if (driver.position_reached()) {
           break;
         }
+        serialEvent();
         if (driver.event_stop_l() || driver.event_stop_r()) {
           driver.XACTUAL(0);
           driver.XTARGET(0);
           break;
         }
+      }
+
+      analogWrite(pwm_pin, led_intensity);
+      for (auto i = 0; i < 500; ++i) {
+        delayMicroseconds(100);
         serialEvent();
       }
 
-      analogWrite(PWM_PINS[col], led_intensity);
-      delay(100);
       auto result = analogRead(ADC_PINS[col]);
-      analogWrite(PWM_PINS[col], 0);
+      analogWrite(pwm_pin, 0);
 
       Serial.print("@scan_well ");
       Serial.print(row);
@@ -271,19 +280,15 @@ void loop() {
 */
 void serialEvent() {
   static String inputString;
-  while (Serial.available()) {
-    char inChar = (char)Serial.read();
-    inputString += inChar;
-    if (inChar == '\n') {
-      // stringComplete = true;
-      Command c;
-      if (string_to_command(inputString, &c)) {
-        command_queue.push(&c);
-      } else {
-        Serial.print("@error invalid command ");
-        Serial.println(inputString);
-      }
-      inputString = "";
+  Command c;
+  if (Serial.available()) {
+    inputString += Serial.readStringUntil('\n');
+    if (string_to_command(inputString, &c)) {
+      command_queue.push(&c);
+    } else {
+      Serial.print("@error invalid command ");
+      Serial.println(inputString);
     }
+    inputString = "";
   }
 }
