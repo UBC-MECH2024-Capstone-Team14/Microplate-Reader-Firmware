@@ -240,12 +240,18 @@ void loop() {
       }
 
       analogWrite(pwm_pin, led_intensity);
-      for (auto i = 0; i < 500; ++i) {
+
+      for (auto i = 0; i < 1000; ++i) {
         delayMicroseconds(100);
         serialEvent();
       }
 
       auto result = analogRead(ADC_PINS[col]);
+      for (auto i = 0; i < 1000; ++i) {
+        delayMicroseconds(100);
+        serialEvent();
+      }
+
       analogWrite(pwm_pin, 0);
 
       Serial.print("@scan_well ");
