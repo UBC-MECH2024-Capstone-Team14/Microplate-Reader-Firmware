@@ -117,23 +117,17 @@ void setup() {
   driver.CHOPCONF(0x000100C3);
   // driver.IHOLD_IRUN(0x00061F0A);
   driver.ihold(1);
-  driver.irun(31);
+  // driver.irun(31);
+  driver.irun(24);
   driver.TPOWERDOWN(0x0000000A);
   driver.GCONF(0x00000004);
   driver.TPWMTHRS(0x000001F4);
   driver.PWMCONF(0x000401C8);
 
-  // driver.a1(1000);
-  // driver.v1(50000);
-  // driver.AMAX(500);
-  // driver.VMAX(200000);
-  // driver.DMAX(700);
-  // driver.d1(1400);
-  // driver.VSTOP(10);
   driver.a1(1000);
   driver.v1(10000);
   driver.AMAX(500);
-  driver.VMAX(75000);
+  driver.VMAX(65000);
   driver.DMAX(700);
   driver.d1(1400);
   driver.VSTOP(10);
@@ -241,13 +235,13 @@ void loop() {
 
       analogWrite(pwm_pin, led_intensity);
 
-      for (auto i = 0; i < 1000; ++i) {
+      for (auto i = 0; i < 500; ++i) {
         delayMicroseconds(100);
         serialEvent();
       }
 
       auto result = analogRead(ADC_PINS[col]);
-      for (auto i = 0; i < 1000; ++i) {
+      for (auto i = 0; i < 500; ++i) {
         delayMicroseconds(100);
         serialEvent();
       }
